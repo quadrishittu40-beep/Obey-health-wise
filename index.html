@@ -508,7 +508,7 @@ body:not([data-theme="light"]) .qtext,
     <div class="qcard">
       <div class="turn-row" style="display:flex;justify-content:space-between;align-items:center;">
         <div class="turn-label" id="turnLabel">TEAM ONE'S TURN</div>
-        <div class="timer-num" id="timerNum">10s</div>
+        <div class="timer-num" id="timerNum">30s</div>
       </div>
       <div class="timer-track"><div class="timer-bar" id="timerBar"></div></div>
       <p class="qtext" id="qtext">Loading question…</p>
@@ -1936,7 +1936,7 @@ function renderScoresGame(){
   document.getElementById('knot').style.left = (50 + p*8)+'%';
 }
 
-const QUESTION_SECONDS = 10;
+const QUESTION_SECONDS = 30;
 const MAX_ROUNDS = 20; // each team answers 10 questions; a tie continues as sudden death
 function startTimer(){
   clearTimer();
