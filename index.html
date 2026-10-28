@@ -287,6 +287,7 @@ body:not([data-theme="light"]) .qtext,
     }
   }
 .level-row{display:flex;gap:10px;max-width:460px;margin:0 0 14px}.lv{flex:1;padding:12px 8px;border-radius:12px;border:2px solid #c9a227;background:transparent;color:inherit;font:inherit;font-weight:800;cursor:pointer}.lv.on{background:#c9a227;color:#0d2a5c}
+.lifelines{display:flex;gap:8px;margin:10px 0 4px}.ll{flex:1;padding:9px 4px;border-radius:10px;border:2px solid #c9a227;background:transparent;color:inherit;font:inherit;font-weight:800;font-size:13px;cursor:pointer}.ll:disabled{opacity:.35;cursor:not-allowed;text-decoration:line-through}.opt.gone{display:none}
 </style>
 </head>
 <body>
@@ -514,6 +515,7 @@ body:not([data-theme="light"]) .qtext,
         <div class="timer-num" id="timerNum">30s</div>
       </div>
       <div class="timer-track"><div class="timer-bar" id="timerBar"></div></div>
+      <div class="lifelines"><button class="ll" id="llFifty" disabled>50:50</button><button class="ll" id="llTime" disabled>⏱ +15s</button><button class="ll" id="llSkip" disabled>⏭ Skip</button></div>
       <p class="qtext" id="qtext">Loading question…</p>
       <div class="options" id="options"></div>
       <div class="roundinfo">
@@ -1500,7 +1502,7 @@ function newRoomData(comp, slot, fx){
   return { compId:comp.id, compName:comp.name, slot, stage:slotStage(comp, slot),
     aId:fx.a, aName:compTeamName(comp, fx.a), bId:fx.b, bName:compTeamName(comp, fx.b),
     joinedA:false, joinedB:false, status:'waiting', phase:'question', seq:0, qi:0, queue:makeQueue(),
-    turn:'A', round:1, played:0, pos:0, scoreA:0, scoreB:0, last:null, end:null, winnerId:null, createdAt:Date.now() };
+    turn:'A', round:1, played:0, pos:0, scoreA:0, scoreB:0, last:null, end:null, winnerId:null, createdAt:Date.now(), ll:{A:{f:0,t:0,s:0},B:{f:0,t:0,s:0}}, hide:[], extra:0 };
 }
 function nextSlotFor(comp, id){
   if(!comp.teams.some(t=>t.id===id)) return {msg:'Your team is not in this competition.'};
@@ -1547,7 +1549,7 @@ function computeSubmit(d, pick){
 function computeAdvance(d){
   if(d.status!=='playing' || d.phase!=='reveal') return null;
   if(d.end) return {finish:true};
-  return { update:{ phase:'question', qi:d.qi+1, turn: d.turn==='A' ? 'B' : 'A', round:d.round+1, last:null, seq:d.seq+1 } };
+  return { update:{ phase:'question', qi:d.qi+1, turn: d.turn==='A' ? 'B' : 'A', round:d.round+1, last:null, hide:[], extra:0, seq:d.seq+1 } };
 }
 async function liveSubmit(pick){
   const c = liveCtx; if(!c || !c.room) return;
@@ -1637,6 +1639,7 @@ function renderLive(){
   $('roundNo').textContent = d.round>MAX_ROUNDS ? 'Sudden death' : ('Round ' + d.round + ' of ' + MAX_ROUNDS);
   $('posInfo').textContent = d.pos===0 ? 'Rope centered' : (d.pos<0 ? d.aName + ' leading by ' + Math.abs(d.pos) : d.bName + ' leading by ' + d.pos);
   $('nextBtn').style.display = 'none';
+  llRenderLive(d);
   const opts = $('options');
   if(d.status==='waiting'){
     const other = c.mySide==='A' ? d.bName : d.aName;
@@ -1651,11 +1654,12 @@ function renderLive(){
   const turnName = d.turn==='A' ? d.aName : d.bName;
   $('turnLabel').textContent = d.status==='finished' ? 'MATCH OVER' : d.phase==='reveal' ? 'ANSWER REVEALED' : (myTurn ? 'YOUR TURN — ANSWER NOW' : (turnName + ' is answering…'));
   $('qtext').textContent = q.q;
-  const key = d.qi + ':' + d.phase + ':' + (d.last ? d.last.pick : '') + ':' + myTurn;
+  const key = d.qi + ':' + d.phase + ':' + (d.last ? d.last.pick : '') + ':' + myTurn + ':' + (d.hide||[]).join('');
   if(key!==c.renderedKey){
     c.renderedKey = key; opts.innerHTML = '';
     q.o.forEach((text, i)=>{
       const b = document.createElement('button'); b.className = 'opt'; b.textContent = text;
+      if((d.hide||[]).includes(i) && d.phase!=='reveal') b.classList.add('gone');
       if(d.phase==='reveal'){
         b.disabled = true;
         if(i===q.a) b.classList.add('correct'); else if(d.last && i===d.last.pick) b.classList.add('wrong');
@@ -1667,16 +1671,16 @@ function renderLive(){
   }
 }
 function liveTick(){
-  const c = liveCtx; if(!c || !c.room) return; const d = c.room;
+  const c = liveCtx; if(!c || !c.room) return; const d = c.room; const QS = QUESTION_SECONDS + (d.extra||0);
   if(d.status==='playing' && d.phase==='question'){
     const elapsed = (Date.now() - c.seenAt)/1000;
-    const left = Math.max(0, Math.ceil(QUESTION_SECONDS - elapsed));
+    const left = Math.max(0, Math.ceil(QS - elapsed));
     document.getElementById('timerNum').textContent = left + 's';
-    document.getElementById('timerBar').style.width = Math.max(0, (QUESTION_SECONDS-elapsed)/QUESTION_SECONDS*100) + '%';
+    document.getElementById('timerBar').style.width = Math.max(0, (QS-elapsed)/QS*100) + '%';
     document.getElementById('timerBar').classList.toggle('urgent', left<=3);
     const myTurn = c.mySide===d.turn;
-    if(elapsed>=QUESTION_SECONDS && myTurn) liveSubmit(-1);
-    else if(elapsed>=QUESTION_SECONDS+6 && !myTurn) liveSubmit(-1); // the answering device seems stalled
+    if(elapsed>=QS && myTurn) liveSubmit(-1);
+    else if(elapsed>=QS+6 && !myTurn) liveSubmit(-1); // the answering device seems stalled
   } else if(d.status==='playing' && d.phase==='reveal'){
     if(Date.now() - c.seenAt >= 2600 + (c.mySide==='B' ? 500 : 0)) liveAdvance();
   }
@@ -1924,7 +1928,7 @@ document.getElementById('volSlider').addEventListener('input', applySoundSetting
 function startGame(accA, accB, ctx){
   if(!SYNCED && store.questions.length===0){ store.questions = DEFAULT_QUESTIONS.slice(); saveStore(); }
   refillPool();
-  state = { accA, accB, scoreA:0, scoreB:0, pos:0, turn:'A', round:1, currentQ:null, answered:false, played:0, ctx: ctx||null };
+  state = { accA, accB, scoreA:0, scoreB:0, pos:0, turn:'A', round:1, currentQ:null, answered:false, played:0, ctx: ctx||null, ll:{A:{f:0,t:0,s:0},B:{f:0,t:0,s:0}} };
   document.getElementById('chipAName').textContent = accA.name;
   document.getElementById('chipBName').textContent = accB.name;
   document.getElementById('liveNote').classList.add('hidden');
@@ -1950,7 +1954,7 @@ const QUESTION_SECONDS = 30;
 const MAX_ROUNDS = 20; // each team answers 10 questions; a tie continues as sudden death
 function startTimer(){
   clearTimer();
-  state.timeLeft = QUESTION_SECONDS;
+  state.timeLeft = QUESTION_SECONDS; state.timeMax = QUESTION_SECONDS;
   updateTimerUI();
   state.timerId = setInterval(()=>{
     state.timeLeft--;
@@ -1960,11 +1964,55 @@ function startTimer(){
 }
 function clearTimer(){ if(state.timerId){ clearInterval(state.timerId); state.timerId=null; } }
 function updateTimerUI(){
-  const pct = Math.max(0, (state.timeLeft/QUESTION_SECONDS)*100);
+  const pct = Math.max(0, (state.timeLeft/(state.timeMax||QUESTION_SECONDS))*100);
   document.getElementById('timerBar').style.width = pct+'%';
   document.getElementById('timerNum').textContent = state.timeLeft+'s';
   document.getElementById('timerBar').classList.toggle('urgent', state.timeLeft<=3);
 }
+
+function llRender(){
+  if(!state||!state.ll) return;
+  const L = state.ll[state.turn], off = state.answered;
+  [['llFifty','f'],['llTime','t'],['llSkip','s']].forEach(([id,k])=>{ document.getElementById(id).disabled = off || !!L[k]; });
+}
+function llFifty(){
+  if(state.answered || state.ll[state.turn].f) return; state.ll[state.turn].f = 1;
+  const btns = [...document.querySelectorAll('#options .opt')], ci = state.opts.indexOf(state.currentQ.a);
+  shuffle(btns.map((_,i)=>i).filter(i=>i!==ci)).slice(0,2).forEach(i=>btns[i].classList.add('gone'));
+  llRender();
+}
+function llTime(){
+  if(state.answered || state.ll[state.turn].t) return; state.ll[state.turn].t = 1;
+  state.timeMax += 15; state.timeLeft += 15; updateTimerUI(); llRender();
+}
+function llSkip(){
+  if(state.answered || state.ll[state.turn].s) return; state.ll[state.turn].s = 1;
+  clearTimer(); nextQuestion();
+}
+async function liveLifeline(kind){
+  const c = liveCtx; if(!c || !c.room) return; const d0 = c.room;
+  if(d0.status!=='playing' || d0.phase!=='question' || c.mySide!==d0.turn) return;
+  try{
+    await FB.runTransaction(async tx=>{
+      const ref = FB.collection('live').doc(c.roomId), snap = await tx.get(ref); if(!snap.exists) return;
+      const d = snap.data(); if(d.status!=='playing' || d.phase!=='question' || d.turn!==c.mySide) return;
+      if((((d.ll||{})[c.mySide])||{})[kind]) return;
+      const upd = {}; upd['ll.'+c.mySide+'.'+kind] = 1;
+      if(kind==='f'){ const q = d.queue[d.qi % d.queue.length]; upd.hide = shuffle(q.o.map((_,i)=>i).filter(i=>i!==q.a)).slice(0,2); }
+      else if(kind==='t'){ upd.extra = (d.extra||0) + 15; }
+      else { upd.qi = d.qi+1; upd.seq = d.seq+1; upd.hide = []; upd.extra = 0; }
+      tx.update(ref, upd);
+    });
+  }catch(e){ console.error('lifeline failed:', e); }
+}
+function llRenderLive(d){
+  const c = liveCtx; if(!c) return;
+  const mine = c.mySide===d.turn && d.status==='playing' && d.phase==='question', L = ((d.ll||{})[c.mySide])||{};
+  [['llFifty','f'],['llTime','t'],['llSkip','s']].forEach(([id,k])=>{ document.getElementById(id).disabled = !mine || !!L[k]; });
+}
+document.getElementById('llFifty').onclick = ()=> liveCtx ? liveLifeline('f') : llFifty();
+document.getElementById('llTime').onclick = ()=> liveCtx ? liveLifeline('t') : llTime();
+document.getElementById('llSkip').onclick = ()=> liveCtx ? liveLifeline('s') : llSkip();
 
 function nextQuestion(){
   if(pool.length===0) refillPool();
@@ -1985,12 +2033,14 @@ function nextQuestion(){
   document.getElementById('nextBtn').style.display='none';
   renderScoresGame();
   startTimer();
+  llRender();
 }
 
 function answer(i){
   if(state.answered) return;
   clearTimer();
   state.answered = true;
+  llRender();
   const correctIdx = state.opts.indexOf(state.currentQ.a);
   document.querySelectorAll('.opt').forEach((b,idx)=>{
     b.disabled = true;
